@@ -1,0 +1,62 @@
+# ============================================================================
+# LLM Wiki .gitignore — Exclude personal data and generated files
+# ============================================================================
+
+# Research data — keep these private or in a separate private repo
+papers/
+sources/
+wiki/
+notes/
+documents/
+index.md
+_day_plans.md
+
+# Configuration with secrets
+config.yaml
+.env
+.env.local
+
+# Watcher queue and logs
+_scripts/_queue/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv/
+env/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Temporary files
+*.tmp
+*.bak
+*.backup
+*~
+.~*
+
+# Zotero sync markers
+.last_zotero_sync
+
+# Transient
+*.log
