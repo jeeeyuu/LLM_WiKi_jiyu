@@ -1,175 +1,183 @@
-# LLM Wiki — Personal Knowledge Base + Zotero Bridge
+# LLM Wiki — 개인 지식 기반 + Zotero 동기화 시스템
 
-A modular system for building a personal knowledge wiki from academic papers and research notes, with bi-directional sync to Zotero. Designed for researchers using Claude for literature synthesis.
-
----
-
-## Overview
-
-**LLM Wiki** automates the process of:
-
-1. **Extracting** PDF text from Zotero storage (cached for speed)
-2. **Mirroring** your Obsidian notes into a unified research archive
-3. **Synthesizing** papers and notes via LLM into structured wiki pages
-4. **Feeding back** wiki cross-references as Zotero tags and "Related Items"
-
-The system is **modular** — you can use stage 1 (extraction) without stage 2 (synthesis), or stage 2 without the Zotero feedback loop.
+Zotero에서 논문을 자동 추출하고, Obsidian 노트를 통합한 후, Claude를 활용해 구조화된 위키로 합성하는 모듈식 연구 관리 시스템입니다. 연구자를 위해 설계되었습니다.
 
 ---
 
-## Quick Start
+## 🎯 개요
 
-### 1. Clone and install
+**LLM Wiki**는 다음을 자동화합니다:
+
+1. **추출 (Stage 1)** — Zotero 저장소에서 PDF 텍스트 추출 및 캐싱
+2. **미러링 (Stage 0)** — Obsidian 노트를 통합 아카이브에 반영
+3. **합성 (Stage 2)** — LLM으로 논문 + 노트를 구조화된 위키로 변환
+4. **피드백 (Stage 3)** — 위키 참조를 Zotero 태그와 관련 항목으로 역동기화
+
+**모듈식 설계** — Stage 1만 사용하거나, Stage 2 없이 Zotero 동기화를 스킵할 수 있습니다.
+
+---
+
+## 🚀 빠른 시작
+
+### 1단계: 클론 및 설치
 
 ```bash
-git clone <repo> llm-wiki
+git clone <repo-url> llm-wiki
 cd llm-wiki
 pip install -r _scripts/requirements.txt
 ```
 
-### 2. Configure
+### 2단계: 환경 설정
 
-Copy `config.example.yaml` to `config.yaml` and customize, **or** set environment variables:
+`config.example.yaml`을 `config.yaml`로 복사하거나 환경변수 설정:
 
 ```bash
+# Windows PowerShell
+$env:ZOTERO_DIR = "$env:USERPROFILE\Zotero"
+$env:OBSIDIAN_VAULT = "$env:USERPROFILE\Obsidian"
+$env:WIKI_ROOT = "."
+
+# macOS/Linux
 export ZOTERO_DIR=~/Zotero
 export OBSIDIAN_VAULT=~/Obsidian
 export WIKI_ROOT=.
 ```
 
-### 3. Extract papers from Zotero
+### 3단계: Zotero에서 논문 추출
 
-Zotero must be **closed**:
+**Zotero는 반드시 닫아야 합니다** (데이터베이스 잠금 때문):
 
 ```bash
 python _scripts/batch_extract.py
 ```
 
-This creates `papers/{stem}.fulltext.md` for every PDF in your Zotero library.
+→ `papers/{stem}.fulltext.md` 생성 (Zotero의 모든 PDF)
 
-### 4. Mirror your notes
+### 4단계: 노트 미러링
 
 ```bash
 python _scripts/notes_ingest.py
 ```
 
-This creates `notes/{slug}.md` for every `.md` file in your configured scan folders (e.g., External Notes, Lab Notes).
+→ `notes/{slug}.md` 생성 (설정된 Obsidian 폴더의 모든 .md 파일)
 
-### 5. (Optional) Build the wiki with Claude
+### 5단계 (선택): Claude로 위키 구축
 
-Use the Claude Cowork agent to synthesize papers into concept wiki pages:
+Cowork 에이전트 사용:
 
 ```
-In Cowork:
-> Ask Claude: "Build the wiki. For each paper, create a sources/{stem}.md 
-  entry and update relevant concept pages in wiki/."
+Cowork에서 Claude에게 묻기:
+> 위키를 구축해줘. 각 논문마다 sources/{stem}.md를 만들고,
+  관련 개념 페이지를 wiki/{category}/에 추가해.
 ```
 
-### 6. (Optional) Sync back to Zotero
+### 6단계 (선택): Zotero에 역동기화
 
-Zotero must be **open**:
+**Zotero는 반드시 열어야 합니다** (로컬 API가 필요):
 
 ```bash
 python _scripts/zotero_feedback.py
 ```
 
-This adds `wiki:cat/{category}` and `wiki:overview/{topic}` tags to papers, plus "Related Items" links based on cross-references in the wiki.
+→ Zotero 항목에 `wiki:cat/{category}`, `wiki:overview/{topic}` 태그 추가
 
 ---
 
-## How It Works
+## ⚙️ 작동 원리
 
-### 4-Stage Pipeline
+### 4단계 파이프라인
 
-| Stage | Mechanism | LLM tokens | Time |
-|-------|-----------|-----------|------|
-| **0** | Mirror Obsidian notes into `notes/` with frontmatter | 0 | seconds |
-| **1** | Extract PDF text from Zotero → `papers/{stem}.fulltext.md` | 0 | minutes |
-| **2** | Build wiki: synthesize papers + notes → `sources/`, `wiki/`, `index.md` | ✓ | varies |
-| **3** | Push wiki structure back to Zotero as tags + relations | 0 | seconds |
+| 단계 | 역할 | LLM 토큰 | 시간 |
+|------|------|--------|------|
+| **0** | Obsidian 노트 → `notes/{slug}.md` 미러링 | 0 | 초 |
+| **1** | Zotero PDF → `papers/{stem}.fulltext.md` 추출 | 0 | 분 |
+| **2** | 논문+노트 → `sources/`, `wiki/` 합성 (LLM) | ✅ | 가변 |
+| **3** | 위키 구조 → Zotero 태그 + 관련 항목 역동기화 | 0 | 초 |
 
-Each stage is independent and idempotent (safe to re-run).
+각 단계는 독립적이고 멱등성(idempotent) — 안전하게 재실행 가능합니다.
 
-### Architecture
+### 아키텍처
 
 ```
-Obsidian vault                     Zotero library
-     ↓                                    ↓
-notes_ingest.py                   batch_extract.py
-     ↓                                    ↓
-notes/{slug}.md                   papers/{stem}.fulltext.md
-     ↓                                    ↓
-     └─────────────────┬──────────────────┘
-                       ↓
-                  (Claude LLM)
-                  Stage 2: Wiki Build
-                       ↓
-        sources/{stem}.md
-        wiki/{category}/{concept}.md
-        wiki/overviews/{topic}.md
-        index.md
-                       ↓
-                zotero_feedback.py
-                       ↓
-                Zotero tags + Related Items
+Obsidian 볼트          Zotero 라이브러리
+      ↓                       ↓
+  notes_ingest.py    batch_extract.py
+      ↓                       ↓
+  notes/{slug}.md    papers/{stem}.fulltext.md
+      ↓                       ↓
+      └─────────┬─────────────┘
+                ↓
+           (Claude LLM)
+          Stage 2: 위키 구축
+                ↓
+     sources/{stem}.md
+     wiki/{category}/{concept}.md
+     wiki/overviews/{topic}.md
+                ↓
+        zotero_feedback.py
+                ↓
+         Zotero 태그 + 관련 항목
 ```
 
 ---
 
-## File Structure
+## 📁 파일 구조
 
 ```
 llm-wiki/
-├── CLAUDE.md                    # Agent rules & schema (read this first!)
-├── config.example.yaml          # Configuration template
-├── .gitignore                   # Exclude personal data from git
-├── README.md                    # This file
+├── CLAUDE.md                    # 에이전트 규칙 & 스키마 (필독!)
+├── README.md                    # 이 파일 (한글)
+├── README_english.md            # 영문 버전
+├── config.example.yaml          # 설정 템플릿
+├── .gitignore                   # 개인 데이터 제외 규칙
 │
 ├── _scripts/
-│   ├── batch_extract.py         # Stage 1: PDF text extraction
-│   ├── notes_ingest.py          # Stage 0: Notes mirroring
-│   ├── zotero_feedback.py       # Stage 3: Wiki → Zotero sync
-│   ├── start_watcher.bat        # Launch dispatch watcher (Windows)
-│   ├── requirements.txt         # Python dependencies
-│   ├── SETUP.md                 # Detailed setup instructions
-│   └── _queue/                  # Dispatch queue (transient)
+│   ├── batch_extract.py         # Stage 1: PDF 추출
+│   ├── notes_ingest.py          # Stage 0: 노트 미러링
+│   ├── zotero_feedback.py       # Stage 3: Zotero 동기화
+│   ├── _stem.py                 # 스템(stem) 생성 유틸
+│   ├── start_watcher.bat        # 감시 프로세스 시작 (Windows)
+│   ├── requirements.txt         # Python 패키지 목록
+│   └── SETUP.md                 # 상세 설치 가이드
 │
 ├── _templates/
-│   ├── source-template.md       # Template for sources/{stem}.md
-│   └── wiki-template.md         # Template for wiki concept pages
+│   ├── source-template.md       # sources/{stem}.md 템플릿
+│   ├── wiki-template.md         # 위키 개념 페이지 템플릿
+│   ├── overview-template.md     # 개요 페이지 템플릿
+│   └── notes-template.md        # 노트 템플릿
 │
-├── papers/                      # ← Generated: cached PDF extracts
-├── sources/                     # ← Generated: LLM-synthesized summaries
-├── wiki/                        # ← Generated: concept pages
-│   ├── overviews/               # Cross-category synthesis
-│   └── {category}/              # 25 fixed categories
-├── notes/                       # ← Generated: mirrored Obsidian notes
-├── documents/                   # Non-Zotero reference materials
-└── index.md                     # ← Generated: catalog
+├── papers/                      # ← 생성됨: PDF 텍스트 캐시
+├── sources/                     # ← 생성됨: LLM 합성 요약
+├── wiki/                        # ← 생성됨: 개념 페이지
+│   ├── overviews/               # 교차 범주 합성
+│   └── {category}/              # 25개 고정 범주
+├── notes/                       # ← 생성됨: 미러된 Obsidian 노트
+├── documents/                   # Zotero 외 참고 자료 (책, 보고서 등)
+└── index.md                     # ← 생성됨: 전체 카탈로그
 ```
 
 ---
 
-## Configuration
+## ⚙️ 설정
 
-### Via Environment Variables (recommended for deployment)
+### 환경변수 방식 (배포 권장)
 
 ```bash
-# Essential
-export ZOTERO_DIR=/path/to/zotero
-export OBSIDIAN_VAULT=/path/to/obsidian
-export WIKI_ROOT=/path/to/llm-wiki
+# 필수
+set ZOTERO_DIR=C:\Users\{username}\Zotero
+set OBSIDIAN_VAULT=C:\Users\{username}\Obsidian
+set WIKI_ROOT=.
 
-# Optional Zotero API
-export ZOTERO_API_BASE=http://127.0.0.1:23119/api/users/0
+# 선택 (Zotero API)
+set ZOTERO_API_BASE=http://127.0.0.1:23119/api/users/0
 
-# Optional: Obsidian folders to mirror (pipe-separated)
-export SCAN_FOLDERS="External Notes|Lab Notes|Tool Notes|Info|Clippings"
+# 선택 (미러할 Obsidian 폴더 | 구분)
+set SCAN_FOLDERS=External Notes|Lab Notes|Tool Notes|Info|Clippings
 ```
 
-### Via config.yaml (recommended for development)
+### config.yaml 방식 (개발 권장)
 
-Copy `config.example.yaml` to `config.yaml` and edit:
+`config.example.yaml`을 복사해서 수정:
 
 ```yaml
 zotero:
@@ -187,182 +195,164 @@ wiki:
   root: .
 ```
 
-Environment variables override config.yaml values.
+환경변수가 config.yaml을 덮어씁니다.
 
 ---
 
-## Usage
+## 📖 사용법
 
-### Extract papers (stage 1)
+### 논문 추출 (Stage 1)
 
 ```bash
-# Incremental (skip papers already cached)
+# 캐시된 것 건너뛰고 증분 처리
 python _scripts/batch_extract.py
 
-# Force re-extract all
+# 모두 다시 추출
 python _scripts/batch_extract.py --force
 
-# Test with 1 paper
+# 1개 논문만 테스트
 python _scripts/batch_extract.py --limit 1
 
-# Extract single paper by Zotero item key
+# Zotero 항목 키로 특정 논문만 추출
 python _scripts/batch_extract.py --item-key ABCD1234
 ```
 
-**Requirements:**
-- Zotero **must be closed** (database is locked while Zotero is open)
-- `ZOTERO_DIR` environment variable or `zotero.data_dir` in config.yaml
+**요구사항:**
+- Zotero **반드시 닫기** (데이터베이스 잠김)
+- `ZOTERO_DIR` 환경변수 또는 config.yaml
 
-### Mirror notes (stage 0)
+### 노트 미러링 (Stage 0)
 
 ```bash
 python _scripts/notes_ingest.py
 ```
 
-**Features:**
-- Scans configured Obsidian folders recursively
-- Large notes (>32 KB) are head+tail truncated to preserve bandwidth
-- Hash-based drift detection (catches edits that don't bump mtime)
-- Safe to re-run multiple times per day
+**기능:**
+- 설정된 Obsidian 폴더 재귀 검색
+- 큰 노트 (>32 KB)는 머리+꼬리 자르기 (대역폭 절약)
+- 해시 기반 변화 감지 (mtime을 갱신하지 않는 편집도 감지)
+- 하루에 여러 번 안전하게 재실행 가능
 
-### Synthesize with Claude (stage 2)
+### Claude로 합성 (Stage 2)
 
-Use the Cowork agent (requires Claude subscription):
+Cowork 에이전트 사용 (Claude 구독 필요):
 
 ```
-> Build the wiki from all papers in papers/ and notes in notes/.
-> For each paper, write sources/{stem}.md with the schema from CLAUDE.md §7.
-> Update or create concept wiki pages in wiki/{category}/ for each topic.
+Cowork에서:
+> papers/의 모든 논문과 notes/의 모든 노트에서 위키를 구축해줘.
+  각 논문마다 CLAUDE.md §7 스키마로 sources/{stem}.md를 만들고,
+  관련 개념 페이지를 wiki/{category}/에서 업데이트해.
 ```
 
-Or with Claude Code:
+또는 Claude Code:
 
 ```bash
 claude ask "Build the wiki from papers/ and notes/"
 ```
 
-### Sync back to Zotero (stage 3)
+### Zotero에 역동기화 (Stage 3)
 
 ```bash
-# Incremental (since last run)
+# 마지막 실행 이후만 처리
 python _scripts/zotero_feedback.py
 
-# Full scan
+# 전체 스캔
 python _scripts/zotero_feedback.py --full
 
-# Dry run (show what would change)
+# 시뮬레이션 (변경사항 표시만)
 python _scripts/zotero_feedback.py --dry-run
 ```
 
-**Requirements:**
-- Zotero **must be open** (local API runs on http://127.0.0.1:23119)
-- `ZOTERO_API_BASE` environment variable or `zotero.api_base` in config.yaml
+**요구사항:**
+- Zotero **반드시 열기** (로컬 API: http://127.0.0.1:23119)
+- `ZOTERO_API_BASE` 환경변수 또는 config.yaml
 
 ---
 
-## Integration with Cowork (Claude Desktop)
+## 💡 주요 개념
 
-If you're using the Cowork research app:
+### Stem (스템)
 
-1. **Start the watcher:**
-   ```bash
-   _scripts/start_watcher.bat  # Windows
-   python _scripts/watcher.py  # or directly
-   ```
-
-2. **Ask Claude in Cowork:**
-   ```
-   > Run the pipeline. Process new papers.
-   ```
-
-   This invokes stages 0, 1, 2, 3 in sequence using the dispatch bridge.
-
-See `_scripts/SETUP.md` for detailed integration instructions.
-
----
-
-## Key Concepts
-
-### Stem
-
-All artifacts about one paper share a single **stem**:
+한 논문의 모든 산출물은 하나의 **stem**을 공유합니다:
 
 ```
-{first-author-lastname}-{year}-{first-3-non-stopword-title-words}
+{첫저자-성}-{연도}-{제목-처음-3개-의미있는-단어}
 ```
 
-Examples: `smith-2024-cryo-em-structure`, `bhatia-2025-bioinformatics-framework`
+예: `smith-2024-cryo-em-structure`, `bhatia-2025-bioinformatics-framework`
 
-Papers with different stems are treated as different papers, even if they share authors.
+다른 stem을 가진 논문은 저자가 같아도 다른 논문으로 취급합니다.
 
-### Categories (25 fixed)
+### 범주 (25개 고정)
 
-Wiki concept pages are scoped to one of 25 categories or marked as overviews:
+위키 개념 페이지는 25개 범주 중 하나에 범위가 정해집니다:
 
-molecular-biology, immunology, bioinformatics, genomics, transcriptomics, proteomics, cell-biology, cancer-biology, neuroscience, microbiology, virology, structural-biology, epigenetics, single-cell, machine-learning, methods, clinical, developmental-biology, signaling, metabolism, drug-discovery, rna-biology, crispr, reviews, evolution
+분자생물, 면역학, 생물정보, 유전체, 전사체, 단백질체, 세포생물, 암생물, 신경과학, 미생물, 바이러스, 구조생물, 후생유전, 단일세포, 기계학습, 방법론, 임상, 발달생물, 신호전달, 대사, 신약개발, RNA생물, CRISPR, 리뷰, 진화
 
-Add new categories only with approval.
+새 범주 추가는 승인 필요.
 
-### Content Priority Hierarchy
+### 콘텐츠 우선순위 계층
 
-When writing wiki pages, source content is drawn from three tiers:
+위키 페이지 작성 시 콘텐츠는 3단계에서 옵니다:
 
-1. **Tier A (highest):** Your own Obsidian notes — you've already curated meaning
-2. **Tier B:** Zotero highlights — you've marked what's important
-3. **Tier C (fallback):** Full PDF text — agent interprets
+1. **Tier A (최고):** Obsidian 개인 노트 — 이미 의미 선별됨
+2. **Tier B:** Zotero 하이라이트 — 중요한 부분 표시됨
+3. **Tier C (대체):** 전체 PDF 텍스트 — 에이전트 해석
 
-Agents **must** prefer A and B over C.
-
----
-
-## Troubleshooting
-
-| Problem | Cause | Solution |
-|---------|-------|----------|
-| `zotero.sqlite not found` | Wrong ZOTERO_DIR | Check environment variable or config.yaml |
-| `database is locked` | Zotero is open during extraction | Close Zotero, retry |
-| `Zotero API unreachable` | Zotero is closed during feedback | Open Zotero, retry |
-| `No module named 'pypdf'` | Dependencies not installed | `pip install -r _scripts/requirements.txt` |
-| `opendataloader-pdf` fails | Java not in PATH | Install OpenJDK or accept pypdf fallback |
-| Watcher hangs | Long-running script | Ctrl+C, check `_queue/watcher.log` |
+에이전트는 **반드시 A와 B를 C보다 우선** 해야 합니다.
 
 ---
 
-## For Public Distribution
+## 🔧 문제 해결
 
-**Include in repo:**
+| 문제 | 원인 | 해결 |
+|------|------|------|
+| `zotero.sqlite not found` | 잘못된 ZOTERO_DIR | 환경변수 또는 config.yaml 확인 |
+| `database is locked` | 추출 중 Zotero 열려 있음 | Zotero 닫고 재시도 |
+| `Zotero API unreachable` | 역동기화 중 Zotero 닫혀 있음 | Zotero 열고 재시도 |
+| `No module named 'pypdf'` | 패키지 미설치 | `pip install -r _scripts/requirements.txt` |
+| `opendataloader-pdf` 실패 | Java PATH에 없음 | OpenJDK 설치 또는 pypdf 폴백 수용 |
+| 감시 프로세스 행(hang) | 오래 걸리는 스크립트 | Ctrl+C, `_queue/watcher.log` 확인 |
+
+---
+
+## 📦 공개 배포 체크리스트
+
+**포함:**
 - `_scripts/`, `_templates/`, `CLAUDE.md`, `config.example.yaml`, `README.md`, `.gitignore`
 
-**Exclude from repo:**
-- `papers/`, `sources/`, `wiki/`, `notes/`, `documents/` (your research data)
-- `config.yaml` (your local paths)
-- `.env` (credentials)
-- `_scripts/_queue/` (transient)
+**제외:**
+- `papers/`, `sources/`, `wiki/`, `notes/`, `documents/` (연구 데이터)
+- `config.yaml` (로컬 경로)
+- `.env` (인증)
+- `_scripts/_queue/` (임시)
 
-See `.gitignore` for the default exclusion list.
-
----
-
-## References
-
-- **CLAUDE.md** — Full agent rules, schema, and workflow. Read before using the system.
-- **config.example.yaml** — All configuration options with descriptions.
-- **_scripts/SETUP.md** — Step-by-step setup for Windows, macOS, Linux.
-- **_templates/** — Document templates for sources and wiki pages.
+`.gitignore` 참조.
 
 ---
 
-## License
+## 📚 참고
 
-This repository is provided as-is. Modify and distribute as needed for your research.
+- **CLAUDE.md** — 전체 에이전트 규칙, 스키마, 워크플로우. 사용 전 필독.
+- **config.example.yaml** — 모든 설정 옵션 설명.
+- **_scripts/SETUP.md** — Windows/macOS/Linux 단계별 설치.
+- **_templates/** — sources 및 위키 페이지 템플릿.
 
 ---
 
-## Questions?
+## 📖 더 알아보기
 
-- Check `CLAUDE.md` for the system design and agent rules.
-- Check `_scripts/SETUP.md` for installation issues.
-- Check individual script docstrings for usage and parameters.
-- Use environment variables or `config.yaml` to customize paths and API endpoints.
+- `CLAUDE.md` — 시스템 설계 및 에이전트 규칙
+- `_scripts/SETUP.md` — 설치 이슈 트러블슈팅
+- 각 스크립트 docstring — 사용법 및 매개변수
+- 환경변수 또는 `config.yaml` — 경로 및 API 엔드포인트 커스터마이징
 
-Happy researching!
+---
+
+## 📄 라이선스
+
+이 저장소는 있는 그대로 제공됩니다. 연구에 필요한 대로 수정 및 배포하세요.
+
+---
+
+**즐거운 연구 되세요!** 🎓
