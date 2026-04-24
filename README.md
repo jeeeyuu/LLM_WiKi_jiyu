@@ -1,367 +1,455 @@
-# LLM Wiki — 개인 지식 기반 + Zotero 동기화 시스템
+# LLM WiKi Jiyu
 
-Zotero에서 논문을 자동 추출하고, Obsidian 노트를 통합한 후, Claude를 활용해 구조화된 위키로 합성하는 모듈식 연구 관리 시스템입니다. 연구자를 위해 설계되었습니다.
+연구실 내부 공유와 개인 지식 축적을 위해 만든 **LLM 기반 문헌·문서 정리 위키 시스템**입니다.  
+논문, 책/매뉴얼 같은 참고 문서, Obsidian 메모를 하나의 저장소로 모으고, 이를 바탕으로 **구조화된 요약(source)**, **개념 위키(concept wiki)**, **오버뷰(overviews)**를 축적하도록 설계되어 있습니다.
 
----
+핵심 목적은 단순 보관이 아니라, **읽은 내용을 재사용 가능한 지식 구조로 바꾸는 것**입니다.
 
-## 🎯 개요
-
-**LLM Wiki**는 다음을 자동화합니다:
-
-1. **추출 (Stage 1)** — Zotero 저장소에서 PDF 텍스트 추출 및 캐싱
-2. **미러링 (Stage 0)** — Obsidian 노트를 통합 아카이브에 반영
-3. **합성 (Stage 2)** — LLM으로 논문 + 노트를 구조화된 위키로 변환
-4. **피드백 (Stage 3)** — 위키 참조를 Zotero 태그와 관련 항목으로 역동기화
-
-**모듈식 설계** — Stage 1만 사용하거나, Stage 2 없이 Zotero 동기화를 스킵할 수 있습니다.
+- markdown viewer는 Obsidian 을 추천합니다.
 
 ---
 
-## 🚀 빠른 시작
+## 이 저장소가 하는 일
 
-### 1단계: 클론 및 설치
+이 저장소는 대략 아래 흐름으로 동작합니다.
 
-```bash
-git clone <repo-url> llm-wiki
-cd llm-wiki
-pip install -r _scripts/requirements.txt
+```text
+논문 PDF / 참고 문서 / 외부 노트
+        ↓
+텍스트 추출 및 정리
+        ↓
+구조화된 source 문서 생성
+        ↓
+개념별 wiki 페이지 업데이트
+        ↓
+overview / graph / index 누적
 ```
 
-### 2단계: 환경 설정
+즉, 파일을 모아두는 폴더가 아니라,
 
-`config.example.yaml`을 `config.yaml`로 복사하거나 환경변수 설정:
+- 무엇을 읽었는지 남기고
+- 어떤 근거에서 나온 주장인지 추적하고
+- 서로 연결되는 개념을 위키처럼 축적하고
+- 나중에 다시 질문했을 때 그 축적물을 근거로 답하게 만드는
 
-```bash
-# Windows PowerShell
-$env:ZOTERO_DIR = "$env:USERPROFILE\Zotero"
-$env:OBSIDIAN_VAULT = "$env:USERPROFILE\Obsidian"
-$env:WIKI_ROOT = "."
-
-# macOS/Linux
-export ZOTERO_DIR=~/Zotero
-export OBSIDIAN_VAULT=~/Obsidian
-export WIKI_ROOT=.
-```
-
-### 3단계: Zotero에서 논문 추출
-
-**Zotero는 반드시 닫아야 합니다** (데이터베이스 잠금 때문):
-
-```bash
-python _scripts/batch_extract.py
-```
-
-→ `papers/{stem}.fulltext.md` 생성 (Zotero의 모든 PDF)
-
-### 4단계: 노트 미러링
-
-```bash
-python _scripts/notes_ingest.py
-```
-
-→ `notes/{slug}.md` 생성 (설정된 Obsidian 폴더의 모든 .md 파일)
-
-### 5단계 (선택): Claude로 위키 구축
-
-Cowork 에이전트 사용:
-
-```
-Cowork에서 Claude에게 묻기:
-> 위키를 구축해줘. 각 논문마다 sources/{stem}.md를 만들고,
-  관련 개념 페이지를 wiki/{category}/에 추가해.
-```
-
-### 6단계 (선택): Zotero에 역동기화
-
-**Zotero는 반드시 열어야 합니다** (로컬 API가 필요):
-
-```bash
-python _scripts/zotero_feedback.py
-```
-
-→ Zotero 항목에 `wiki:cat/{category}`, `wiki:overview/{topic}` 태그 추가
+**연구용 knowledge base**에 가깝습니다.
 
 ---
 
-## ⚙️ 작동 원리
+## 핵심 설계 원칙
 
-### 4단계 파이프라인
+### 1. Wiki as a single source of truth
+에이전트는 웹 검색보다 먼저 이 저장소 안의 내용을 읽도록 설계되어 있습니다.  
+즉, 한 번 정리된 내용은 이후 답변과 연결 작업의 **기준 지식(base knowledge)** 가 됩니다.
 
-| 단계 | 역할 | LLM 토큰 | 시간 |
-|------|------|--------|------|
-| **0** | Obsidian 노트 → `notes/{slug}.md` 미러링 | 0 | 초 |
-| **1** | Zotero PDF → `papers/{stem}.fulltext.md` 추출 | 0 | 분 |
-| **2** | 논문+노트 → `sources/`, `wiki/` 합성 (LLM) | ✅ | 가변 |
-| **3** | 위키 구조 → Zotero 태그 + 관련 항목 역동기화 | 0 | 초 |
+### 2. 논문과 노트를 같은 지식 그래프 안에 넣기
+논문만 따로, 개인 메모만 따로 두지 않고,
 
-각 단계는 독립적이고 멱등성(idempotent) — 안전하게 재실행 가능합니다.
+- `papers/`
+- `documents/`
+- `notes/`
+- `sources/`
+- `wiki/`
 
-### 아키텍처
+를 연결해서 다룹니다.
 
-```
-Obsidian 볼트          Zotero 라이브러리
-      ↓                       ↓
-  notes_ingest.py    batch_extract.py
-      ↓                       ↓
-  notes/{slug}.md    papers/{stem}.fulltext.md
-      ↓                       ↓
-      └─────────┬─────────────┘
-                ↓
-           (Claude LLM)
-          Stage 2: 위키 구축
-                ↓
-     sources/{stem}.md
-     wiki/{category}/{concept}.md
-     wiki/overviews/{topic}.md
-                ↓
-        zotero_feedback.py
-                ↓
-         Zotero 태그 + 관련 항목
-```
+### 3. 사람이 읽을 수 있는 Markdown 중심
+핵심 산출물은 전부 Markdown 기반입니다.  
+따라서 Obsidian에서 보기 쉽고, Git으로 추적 가능하며, LLM이 다시 읽어서 확장하기도 쉽습니다.
+
+### 4. 재생성 가능한 구조
+텍스트 추출 결과나 LLM이 만든 일부 산출물은 필요 시 다시 만들 수 있도록 설계되어 있습니다.  
+즉, 사람이 직접 손으로 정리한 부분과 자동 생성 가능한 부분을 분리합니다.
 
 ---
 
-## 📁 파일 구조
+## 폴더 구조
 
-```
-llm-wiki/
-├── CLAUDE.md                    # 에이전트 규칙 & 스키마 (필독!)
-├── README.md                    # 이 파일 (한글)
-├── README_english.md            # 영문 버전
-├── config.example.yaml          # 설정 템플릿
-├── .gitignore                   # 개인 데이터 제외 규칙
-│
-├── _scripts/
-│   ├── batch_extract.py         # Stage 1: PDF 추출
-│   ├── notes_ingest.py          # Stage 0: 노트 미러링
-│   ├── zotero_feedback.py       # Stage 3: Zotero 동기화
-│   ├── _stem.py                 # 스템(stem) 생성 유틸
-│   ├── start_watcher.bat        # 감시 프로세스 시작 (Windows)
-│   ├── requirements.txt         # Python 패키지 목록
-│   └── SETUP.md                 # 상세 설치 가이드
-│
+```text
+LLM_WiKi_jiyu/
+├── CLAUDE.md
+├── README.md
+├── llm-wiki-gist.md
 ├── _templates/
-│   ├── source-template.md       # sources/{stem}.md 템플릿
-│   ├── wiki-template.md         # 위키 개념 페이지 템플릿
-│   ├── overview-template.md     # 개요 페이지 템플릿
-│   └── notes-template.md        # 노트 템플릿
-│
-├── papers/                      # ← 생성됨: PDF 텍스트 캐시
-├── sources/                     # ← 생성됨: LLM 합성 요약
-├── wiki/                        # ← 생성됨: 개념 페이지
-│   ├── overviews/               # 교차 범주 합성
-│   └── {category}/              # 25개 고정 범주
-├── notes/                       # ← 생성됨: 미러된 Obsidian 노트
-├── documents/                   # Zotero 외 참고 자료 (책, 보고서 등)
-└── index.md                     # ← 생성됨: 전체 카탈로그
+├── _scripts/
+├── papers/
+├── documents/
+├── sources/
+├── notes/
+└── wiki/
+    ├── overviews/
+    └── {category}/
 ```
+
+### `CLAUDE.md`
+이 저장소의 사실상 **운영 규칙서(agent rulebook)** 입니다.  
+에이전트가 어떤 자료를 먼저 읽고, 어떤 형식으로 정리하고, 어떤 근거 표기를 유지해야 하는지를 정의합니다.
+- 저장장소가 명시된 부분들은 직접 자신에 맞춰서 수정해주세요.
+
+### `papers/`
+Zotero 기반 논문 관련 산출물이 놓이는 위치입니다.
+
+- `papers/{stem}.md` : 사람이 큐레이션한 하이라이트/초록 기반 문서
+- `papers/{stem}.fulltext.md` : PDF에서 추출한 전체 텍스트 캐시
+
+원본 논문 PDF 자체는 Zotero storage 쪽에 두고, 이 저장소에는 **텍스트 기반 산출물**을 연결하는 방식입니다.
+
+### `documents/`
+논문이 아닌 참고 자료를 넣는 폴더입니다.
+
+예:
+- 책 chapter
+- manual
+- report
+- standard
+- plain text reference
+
+PDF 문서라면 추출 캐시(`.fulltext.md`)가 생성될 수 있고, `.md`/`.txt` 문서라면 frontmatter를 보강해 바로 downstream으로 넘길 수 있습니다.
+
+### `sources/`
+논문이나 문서를 읽고 나서 생성되는 **구조화 요약 문서**입니다.  
+실질적으로 “개별 자료 단위의 표준화된 정리본” 역할을 합니다.
+
+보통 다음과 같은 섹션을 포함합니다.
+
+- Thesis
+- One-line Summary
+- Document Information
+- Context
+- Key Contributions
+- Methodology
+- Key Results
+- Mechanism / Model
+- Strength of Evidence
+- Limitations
+- Open Questions
+- Related Work
+- Glossary
+- 한국어 요약
+
+### `notes/`
+외부 Obsidian 노트를 위키 시스템 안으로 mirror한 폴더입니다.  
+에이전트가 이 노트들도 citation 가능한 재료처럼 다룰 수 있게 해 줍니다.
+
+### `wiki/`
+자료 개별 요약이 아니라, **개념 중심(concept-level)** 으로 정리되는 페이지들이 들어갑니다.
+
+- `wiki/{category}/` : 주제별 개념 페이지
+- `wiki/overviews/` : 여러 source를 종합한 상위 synthesis 페이지
+
+즉, `sources/`가 “개별 문서 단위 정리”라면, `wiki/`는 “지식 구조화 결과물”에 해당합니다.
+
+### `_templates/`
+새 문서를 만들 때 사용하는 템플릿 모음입니다.
+
+- `source-template.md`
+- `wiki-template.md`
+- `overview-template.md`
+- `notes-template.md`
+
+형식을 통일하는 데 중요합니다.
+
+### `_scripts/`
+자동화 스크립트들이 들어 있는 폴더입니다.  
+이 저장소를 실제 파이프라인처럼 굴리게 해 주는 핵심입니다.
 
 ---
 
-## ⚙️ 설정
+## 파일 이름 규칙 (`stem`)
 
-### 환경변수 방식 (배포 권장)
+논문/문서 관련 산출물은 가능한 한 하나의 공통 stem을 공유하도록 설계되어 있습니다.
 
-```bash
-# 필수
-set ZOTERO_DIR=C:\Users\{username}\Zotero
-set OBSIDIAN_VAULT=C:\Users\{username}\Obsidian
-set WIKI_ROOT=.
+기본 형식:
 
-# 선택 (Zotero API)
-set ZOTERO_API_BASE=http://127.0.0.1:23119/api/users/0
-
-# 선택 (미러할 Obsidian 폴더 | 구분)
-set SCAN_FOLDERS=External Notes|Lab Notes|Tool Notes|Info|Clippings
+```text
+{first-author-lastname}-{year}-{first-3-non-stopword-title-words}
 ```
 
-### config.yaml 방식 (개발 권장)
+예를 들어 하나의 논문에 대해 다음 파일들이 모두 같은 stem을 공유할 수 있습니다.
 
-`config.example.yaml`을 복사해서 수정:
-
-```yaml
-zotero:
-  data_dir: ~/Zotero
-  api_base: http://127.0.0.1:23119/api/users/0
-
-obsidian:
-  vault_root: ~/Obsidian
-  scan_folders:
-    - External Notes
-    - Lab Notes
-    - Tool Notes
-
-wiki:
-  root: .
+```text
+papers/{stem}.md
+papers/{stem}.fulltext.md
+sources/{stem}.md
 ```
 
-환경변수가 config.yaml을 덮어씁니다.
+이 방식의 장점은,
+
+- 사람이 봐도 어떤 자료인지 바로 알 수 있고
+- 스크립트가 pairing하기 쉽고
+- 추후 검색/교차연결이 단순해진다는 점입니다.
 
 ---
 
-## 📖 사용법
+## 자동화 파이프라인
 
-### 논문 추출 (Stage 1)
+이 저장소는 크게 세 단계로 이해하면 쉽습니다.
+
+### Stage 1. 텍스트 추출 (token-free)
+원본 자료에서 LLM이 읽을 수 있는 텍스트 캐시를 만듭니다.
+
+#### 1A. 논문 추출
+`_scripts/batch_extract.py`
+
+역할:
+- Zotero DB에서 논문 메타데이터 조회
+- canonical stem 계산
+- PDF 텍스트 추출
+- `papers/{stem}.fulltext.md` 생성
+- 이미 최신 캐시가 있으면 skip
+
+#### 1B. 비논문 문서 ingest
+`_scripts/documents_ingest.py`
+
+역할:
+- `documents/` 내부의 `.pdf`, `.md`, `.txt` 처리
+- PDF는 `.fulltext.md` 생성
+- text 문서는 frontmatter 보강
+- unsupported 형식은 로그만 남기고 skip
+
+즉 Stage 1의 목적은 **문서를 LLM이 안정적으로 읽을 수 있는 markdown/text 상태로 바꾸는 것**입니다.
+
+### Stage 2. 지식 구조화 (LLM tokens 사용)
+텍스트 캐시를 바탕으로 `sources/`와 `wiki/`를 만듭니다.
+
+핵심 작업:
+- source 문서 생성
+- concept wiki 업데이트
+- overview 보강
+- `index.md` 갱신
+
+이 단계가 실제로 “문서를 읽어서 지식으로 바꾸는” 부분입니다.
+
+### Stage 3. Zotero feedback push (token-free)
+`_scripts/zotero_feedback.py`
+
+역할:
+- 위키/소스 문서의 `zotero_item_key` 확인
+- 관련 태그 추가
+- linked item을 Zotero Related Items로 푸시
+
+즉, 위키 안에서 정리된 연결관계를 Zotero에도 다시 반영합니다.
+
+---
+
+## 주요 스크립트 설명
+
+### `_scripts/batch_extract.py`
+논문 PDF 추출용 스크립트입니다.
+
+주요 특징:
+- Zotero storage 기반
+- incremental 실행 가능
+- `--force`, `--limit`, `--item-key` 지원
+- `opendataloader-pdf` 우선, 실패 시 `pypdf` fallback
+
+예시:
 
 ```bash
-# 캐시된 것 건너뛰고 증분 처리
 python _scripts/batch_extract.py
-
-# 모두 다시 추출
 python _scripts/batch_extract.py --force
-
-# 1개 논문만 테스트
-python _scripts/batch_extract.py --limit 1
-
-# Zotero 항목 키로 특정 논문만 추출
+python _scripts/batch_extract.py --limit 5
 python _scripts/batch_extract.py --item-key ABCD1234
 ```
 
-**요구사항:**
-- Zotero **반드시 닫기** (데이터베이스 잠김)
-- `ZOTERO_DIR` 환경변수 또는 config.yaml
+### `_scripts/documents_ingest.py`
+논문 외 참고 문서를 `documents/`에서 받아 정리합니다.
 
-### 노트 미러링 (Stage 0)
+예시:
+
+```bash
+python _scripts/documents_ingest.py
+python _scripts/documents_ingest.py --force
+python _scripts/documents_ingest.py --stem pacbio-2024-some-manual
+python _scripts/documents_ingest.py --dry-run
+```
+
+### `_scripts/notes_ingest.py`
+Obsidian 특정 폴더를 스캔하여 `notes/`로 mirror합니다.
+
+기능:
+- 외부 note를 first-class citation 재료로 변환
+- source hash 기반 drift detection
+- 긴 노트는 truncate 처리
+- 원본 경로를 frontmatter에 기록
+
+예시:
 
 ```bash
 python _scripts/notes_ingest.py
 ```
 
-**기능:**
-- 설정된 Obsidian 폴더 재귀 검색
-- 큰 노트 (>32 KB)는 머리+꼬리 자르기 (대역폭 절약)
-- 해시 기반 변화 감지 (mtime을 갱신하지 않는 편집도 감지)
-- 하루에 여러 번 안전하게 재실행 가능
+### `_scripts/watcher.py`
+Cowork sandbox와 Windows Python 환경 사이를 연결하는 브리지입니다.
 
-### Claude로 합성 (Stage 2)
+기능:
+- `_scripts/_queue/inbox/` 감시
+- JSON 명령 수신
+- 현재 Python 환경에서 스크립트 실행
+- 결과를 `_scripts/_queue/outbox/`에 JSON으로 기록
+- heartbeat 유지
 
-Cowork 에이전트 사용 (Claude 구독 필요):
+즉, “에이전트가 명령을 던지고, 로컬 Python이 실제 작업을 수행하는 구조”를 가능하게 합니다.
 
-```
-Cowork에서:
-> papers/의 모든 논문과 notes/의 모든 노트에서 위키를 구축해줘.
-  각 논문마다 CLAUDE.md §7 스키마로 sources/{stem}.md를 만들고,
-  관련 개념 페이지를 wiki/{category}/에서 업데이트해.
-```
+### `_scripts/zotero_feedback.py`
+위키에서 생성된 cross-reference를 Zotero 쪽 tag / related item으로 다시 밀어 넣습니다.
 
-또는 Claude Code:
+### `_scripts/build_graph.py`
+현재 wiki/source/note 연결관계를 스캔해 graph 표현을 생성합니다.  
+지식 그래프가 어떻게 연결되어 있는지 시각적으로 점검할 때 유용합니다.
+
+---
+
+## 권장 사용 흐름
+
+실제로는 아래 순서로 쓰면 됩니다.
+
+### 1. 자료 넣기
+- 논문이면 Zotero에 넣기
+- 비논문 reference면 `documents/`에 넣기
+- 외부 Obsidian note는 지정된 폴더에 작성하기
+
+### 2. token-free 단계 실행
+- `notes_ingest.py`
+- `batch_extract.py`
+- `documents_ingest.py`
+
+### 3. LLM 단계 수행
+추출된 텍스트를 기반으로
+- `sources/` 생성
+- 관련 `wiki/` 갱신
+- 필요 시 `overview` 업데이트
+
+### 4. Zotero 연결 반영
+- `zotero_feedback.py`
+
+### 5. 그래프/인덱스 확인
+- `build_graph.py`
+- Obsidian graph view
+- `index.md`
+
+---
+
+## 환경 전제
+
+현재 저장소는 범용 멀티플랫폼 툴보다는 **Windows + Obsidian + Zotero + Conda/Miniforge** 조합을 전제로 둔 흔적이 많습니다.
+
+대표적으로 다음 전제를 가집니다.
+
+- Windows 경로 기반 설정
+- Zotero local API 사용
+- Obsidian vault 위치 고정
+- Miniforge 환경 이름(`llmwiki`) 사용
+- watcher / bat 파일 중심 실행
+
+따라서 다른 환경에서 바로 복제 실행하려면 경로와 실행 스크립트를 일부 수정해야 할 수 있습니다.
+
+---
+
+## 설치 개요
+
+자세한 설정은 `_scripts/SETUP.md`를 보는 것이 가장 정확합니다.  
+대략적으로는 아래 의존성이 필요합니다.
+
+### Python packages
 
 ```bash
-claude ask "Build the wiki from papers/ and notes/"
+pypdf
+requests
+pyyaml
+opendataloader-pdf   # optional but recommended
 ```
 
-### Zotero에 역동기화 (Stage 3)
+### 추가 의존성
+- Java (`opendataloader-pdf` 사용 시)
+- Zotero desktop
+- Obsidian
+- Miniforge / conda env
+
+예시:
 
 ```bash
-# 마지막 실행 이후만 처리
-python _scripts/zotero_feedback.py
-
-# 전체 스캔
-python _scripts/zotero_feedback.py --full
-
-# 시뮬레이션 (변경사항 표시만)
-python _scripts/zotero_feedback.py --dry-run
+conda activate llmwiki
+mamba install -c conda-forge pypdf requests openjdk
+pip install opendataloader-pdf pyyaml
 ```
 
-**요구사항:**
-- Zotero **반드시 열기** (로컬 API: http://127.0.0.1:23119)
-- `ZOTERO_API_BASE` 환경변수 또는 config.yaml
+---
+
+## 이 저장소의 장점
+
+### 1. 읽은 것이 누적된다
+대부분의 논문 읽기는 그때그때 끝나지만, 이 구조에서는 source와 wiki가 계속 남아서 다음 질문의 기반이 됩니다.
+
+### 2. 논문과 메모가 분리되지 않는다
+실제 연구는 논문만으로 굴러가지 않습니다.  
+실험 아이디어, 랩 미팅 메모, 해석 메모까지 함께 연결해야 합니다.
+
+### 3. Markdown 기반이라 이식성이 좋다
+특정 DB 제품에 종속되지 않고, Git/Obsidian/LLM 어디로도 확장하기 쉽습니다.
+
+### 4. 자동화와 수동 큐레이션의 균형이 있다
+- 기계가 잘하는 것: 추출, 정리, 스캐폴딩, 연결
+- 사람이 해야 하는 것: 해석, 우선순위, conceptual synthesis
+
+이 역할 분리가 비교적 명확합니다.
 
 ---
 
-## 💡 주요 개념
+## 한계와 주의점
 
-### Stem (스템)
+### 1. 아직 내부 워크플로우 최적화 성격이 강함
+경로, 폴더명, 실행 방식이 개인/랩 환경에 맞춰져 있어 처음 받는 사람에게는 약간 러프할 수 있습니다.
 
-한 논문의 모든 산출물은 하나의 **stem**을 공유합니다:
+### 2. Stage 2 품질은 프롬프트와 컨텍스트 품질에 좌우됨
+텍스트 추출이 잘 되어도, source/wiki 생성 품질은 에이전트 규칙과 입력 품질의 영향을 받습니다.
 
-```
-{첫저자-성}-{연도}-{제목-처음-3개-의미있는-단어}
-```
+### 3. PDF 추출 품질은 문서 상태에 따라 달라짐
+특히 표, 2-column PDF, 스캔 품질이 낮은 문서는 후처리가 필요할 수 있습니다.
 
-예: `smith-2024-cryo-em-structure`, `bhatia-2025-bioinformatics-framework`
-
-다른 stem을 가진 논문은 저자가 같아도 다른 논문으로 취급합니다.
-
-### 범주 (25개 고정)
-
-위키 개념 페이지는 25개 범주 중 하나에 범위가 정해집니다:
-
-분자생물, 면역학, 생물정보, 유전체, 전사체, 단백질체, 세포생물, 암생물, 신경과학, 미생물, 바이러스, 구조생물, 후생유전, 단일세포, 기계학습, 방법론, 임상, 발달생물, 신호전달, 대사, 신약개발, RNA생물, CRISPR, 리뷰, 진화
-
-새 범주 추가는 승인 필요.
-
-### 콘텐츠 우선순위 계층
-
-위키 페이지 작성 시 콘텐츠는 3단계에서 옵니다:
-
-1. **Tier A (최고):** Obsidian 개인 노트 — 이미 의미 선별됨
-2. **Tier B:** Zotero 하이라이트 — 중요한 부분 표시됨
-3. **Tier C (대체):** 전체 PDF 텍스트 — 에이전트 해석
-
-에이전트는 **반드시 A와 B를 C보다 우선** 해야 합니다.
+### 4. 완전 자동 지식베이스는 아님
+결국 중요한 건 사람이 어떤 개념 페이지를 만들고, 어떤 연결을 유지할지 판단하는 것입니다.
 
 ---
 
-## 🔧 문제 해결
+## 처음 보는 사람에게 추천하는 시작점
 
-| 문제 | 원인 | 해결 |
-|------|------|------|
-| `zotero.sqlite not found` | 잘못된 ZOTERO_DIR | 환경변수 또는 config.yaml 확인 |
-| `database is locked` | 추출 중 Zotero 열려 있음 | Zotero 닫고 재시도 |
-| `Zotero API unreachable` | 역동기화 중 Zotero 닫혀 있음 | Zotero 열고 재시도 |
-| `No module named 'pypdf'` | 패키지 미설치 | `pip install -r _scripts/requirements.txt` |
-| `opendataloader-pdf` 실패 | Java PATH에 없음 | OpenJDK 설치 또는 pypdf 폴백 수용 |
-| 감시 프로세스 행(hang) | 오래 걸리는 스크립트 | Ctrl+C, `_queue/watcher.log` 확인 |
+이 저장소를 처음 받았다면 아래 순서로 보는 것을 권장합니다.
 
----
+1. `CLAUDE.md`  
+   → 시스템의 철학과 규칙 이해
 
-## 📦 공개 배포 체크리스트
+2. `_scripts/SETUP.md`  
+   → 실제 실행 환경 이해
 
-**포함:**
-- `_scripts/`, `_templates/`, `CLAUDE.md`, `config.example.yaml`, `README.md`, `.gitignore`
+3. `_templates/source-template.md`  
+   → source 문서가 어떤 모양인지 확인
 
-**제외:**
-- `papers/`, `sources/`, `wiki/`, `notes/`, `documents/` (연구 데이터)
-- `config.yaml` (로컬 경로)
-- `.env` (인증)
-- `_scripts/_queue/` (임시)
+4. `_scripts/batch_extract.py`, `_scripts/documents_ingest.py`, `_scripts/notes_ingest.py`  
+   → ingest 흐름 이해
 
-`.gitignore` 참조.
+5. `sources/`, `wiki/` 실제 예시  
+   → 최종 산출물 확인
 
 ---
 
-## 📚 참고
+## 앞으로 확장하면 좋은 점
 
-- **CLAUDE.md** — 전체 에이전트 규칙, 스키마, 워크플로우. 사용 전 필독.
-- **config.example.yaml** — 모든 설정 옵션 설명.
-- **_scripts/SETUP.md** — Windows/macOS/Linux 단계별 설치.
-- **_templates/** — sources 및 위키 페이지 템플릿.
-
----
-
-## 📖 더 알아보기
-
-- `CLAUDE.md` — 시스템 설계 및 에이전트 규칙
-- `_scripts/SETUP.md` — 설치 이슈 트러블슈팅
-- 각 스크립트 docstring — 사용법 및 매개변수
-- 환경변수 또는 `config.yaml` — 경로 및 API 엔드포인트 커스터마이징
+- `README.md`를 더 짧은 public 버전과 내부 운영 문서로 분리
+- `.env` 또는 config 파일 기반 경로 분리
+- Stage 2 자동화 인터페이스 명확화
+- `index.md` 자동 생성 고도화
+- graph / overview 업데이트 규칙 정리
+- 샘플 데이터와 예시 source/wiki 페이지 추가
 
 ---
 
-## 📄 라이선스
+## 한 줄 요약
 
-이 저장소는 있는 그대로 제공됩니다. 연구에 필요한 대로 수정 및 배포하세요.
-
----
+**LLM WiKi Jiyu는 논문, 참고 문서, 개인 노트를 하나의 Markdown 기반 연구 위키로 통합하고, LLM이 그 위에서 누적적으로 지식을 구조화하도록 만든 내부 연구용 knowledge system입니다.**
 
 ---
 
-## 📌 참고
+## 참고
 
-저장소에 포함된 `llm-wiki-gist.md`는 안준용 교수님의 gist를 참고한 문서입니다.  
-원문: https://gist.github.com/joonan30/cbce305684d079dbe9a3fbaefe4e3959
-
----
-
-**즐거운 연구 되세요!** 🎓
+저장소에 포함된 `llm-wiki-gist.md`는 안준용 교수님의 gist를 참고한 문서입니다. 원문은 다음 gist입니다: https://gist.github.com/joonan30/cbce305684d079dbe9a3fbaefe4e3959
