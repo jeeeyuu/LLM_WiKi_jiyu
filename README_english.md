@@ -365,4 +365,13 @@ This repository is provided as-is. Modify and distribute as needed for your rese
 - Check individual script docstrings for usage and parameters.
 - Use environment variables or `config.yaml` to customize paths and API endpoints.
 
+---
+
+## 📌 Acknowledgments
+
+The `llm-wiki-gist.md` file included in this repository is based on Prof. Junyoung Ahn's gist.  
+Original: https://gist.github.com/joonan30/cbce305684d079dbe9a3fbaefe4e3959
+
+---
+
 Happy researching!

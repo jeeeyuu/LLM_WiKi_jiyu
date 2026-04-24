@@ -355,4 +355,13 @@ python _scripts/zotero_feedback.py --dry-run
 
 ---
 
+---
+
+## 📌 참고
+
+저장소에 포함된 `llm-wiki-gist.md`는 안준용 교수님의 gist를 참고한 문서입니다.  
+원문: https://gist.github.com/joonan30/cbce305684d079dbe9a3fbaefe4e3959
+
+---
+
 **즐거운 연구 되세요!** 🎓
