@@ -1,42 +1,51 @@
 # LLM Wiki Configuration Template
 #
 # Copy this file to config.yaml and customize for your system.
-# Alternatively, set these as environment variables and leave config.yaml unmodified.
 #
-# Environment variable names are the same as top-level YAML keys (e.g., ZOTERO_DIR, WIKI_ROOT).
-# Environment variables take precedence over config.yaml values.
+# All paths can be absolute or relative to this file's directory.
+# Use forward slashes (/) for portability; ~ expands to home directory.
 
 # ============================================================================
-# Zotero Configuration
+# File Paths
+# ============================================================================
+
+paths:
+  # Root directory of Zotero data (contains zotero.sqlite and storage/)
+  # Windows: typically C:\Users\{username}\Zotero
+  # macOS: ~/Library/Application Support/Zotero
+  # Linux: ~/.zotero
+  zotero_dir: ~/Zotero
+
+  # Root directory of Obsidian vault (scanned by notes_ingest.py)
+  # Windows: typically C:\Users\{username}\Documents\Obsidian
+  # macOS: ~/Documents/Obsidian or ~/Obsidian
+  # Linux: ~/Obsidian
+  obsidian_root: ~/Obsidian
+
+  # Path to Python executable (used by batch scripts)
+  # Leave empty to use system default python
+  python_exe: ""
+
+# ============================================================================
+# Zotero Integration
 # ============================================================================
 
 zotero:
-  # Path to Zotero data directory
-  # Windows: typically C:\Users\{username}\Zotero or C:\Users\{username}\AppData\Roaming\Zotero
-  # macOS: ~/Library/Application Support/Zotero
-  # Linux: ~/.zotero or ~/.local/share/zotero
-  data_dir: ~/Zotero
-
-  # Local Zotero HTTP API endpoint (Zotero must be running for stage 3)
-  # Default port is 23119; contact your Zotero admin if different
+  # Local HTTP API endpoint for Zotero integration (Zotero must be running)
+  # Default: http://127.0.0.1:23119/api/users/0
+  # Contact your Zotero admin if the port differs
   api_base: http://127.0.0.1:23119/api/users/0
 
-  # Timeout (seconds) for API calls
-  api_timeout: 10
+  # Timeout (seconds) for HTTP requests to Zotero API
+  http_timeout: 10
 
 # ============================================================================
-# Obsidian Configuration
+# Notes Ingestion (Obsidian → notes/)
 # ============================================================================
 
-obsidian:
-  # Path to Obsidian vault root
-  # Windows: typically C:\Users\{username}\Obsidian or C:\Users\{username}\Documents\Obsidian
-  # macOS: ~/Obsidian or ~/Documents/Obsidian
-  # Linux: ~/Obsidian
-  vault_root: ~/Obsidian
-
-  # Folders to mirror into notes/
-  # These are relative to vault_root and will be scanned recursively
+notes_ingest:
+  # Relative paths within obsidian_root to scan (recursive)
+  # These folders will be mirrored into notes/ with drift detection
   scan_folders:
     - External Notes
     - Lab Notes
@@ -44,164 +53,58 @@ obsidian:
     - Info
     - Clippings
 
-  # Size threshold (bytes) for truncating notes
-  # Notes larger than this are head+tail truncated (first 16KB + last 8KB)
-  truncate_threshold: 32768
+  # Threshold (KB) above which notes are truncated (head+tail)
+  # Notes ≤ this size are mirrored verbatim; larger notes get truncated
+  verbatim_threshold_kb: 32
+
+  # Head truncation size (KB) — how much of large notes to keep from the start
+  head_bytes_kb: 16
+
+  # Tail truncation size (KB) — how much of large notes to keep from the end
+  tail_bytes_kb: 8
 
 # ============================================================================
-# Wiki Configuration
+# PDF Extraction (batch_extract.py)
+# ============================================================================
+
+extractor:
+  # Semantic version of extraction format
+  # Increment when extraction parameters change (e.g., new frontmatter fields)
+  # This ensures caches invalidate properly
+  version: "1.0.0"
+
+  # Primary extractor: "opendataloader-pdf" (preferred, requires Java) or "pypdf"
+  # Falls back to pypdf automatically if opendataloader unavailable
+  preferred: opendataloader-pdf
+
+# ============================================================================
+# Wiki Structure
 # ============================================================================
 
 wiki:
-  # Path to wiki root (where papers/, sources/, wiki/, notes/ live)
-  root: .
-
-  # Directory names (relative to wiki root)
-  directories:
-    papers: papers/
-    sources: sources/
-    wiki: wiki/
-    notes: notes/
-    documents: documents/
-
-  # 25 fixed categories for wiki/{category}/ pages
-  # Do not modify without updating all references
-  categories:
-    - molecular-biology
-    - immunology
-    - bioinformatics
-    - genomics
-    - transcriptomics
-    - proteomics
-    - cell-biology
-    - cancer-biology
-    - neuroscience
-    - microbiology
-    - virology
-    - structural-biology
-    - epigenetics
-    - single-cell
-    - machine-learning
-    - methods
-    - clinical
-    - developmental-biology
-    - signaling
-    - metabolism
-    - drug-discovery
-    - rna-biology
-    - crispr
-    - reviews
-    - evolution
+  # Directory names (relative to repo root where CLAUDE.md lives)
+  # Adjust only if you rename these directories
+  papers_dir: papers
+  sources_dir: sources
+  wiki_dir: wiki
+  notes_dir: notes
+  documents_dir: documents
 
 # ============================================================================
-# Python / PDF Extraction Configuration
-# ============================================================================
-
-extraction:
-  # PDF extractor to use: "opendataloader" (preferred, requires Java) or "pypdf"
-  # If opendataloader fails, automatically falls back to pypdf
-  preferred_extractor: opendataloader
-
-  # Java executable (for opendataloader-pdf)
-  # Leave blank to auto-detect from PATH
-  java_path: ""
-
-  # Rebuild cache for PDFs with mtime > cache mtime (set to true to force reextraction)
-  force_reextract: false
-
-  # Cache version — increment if you change extraction parameters
-  cache_version: "1.0.0"
-
-# ============================================================================
-# LLM / Agent Configuration
-# ============================================================================
-
-agent:
-  # Batch ingest size (papers per batch)
-  batch_size: 15
-
-  # Priority tiers for paper selection (see CLAUDE.md §14)
-  # This is informational; the agent uses these guidelines when you ask for "next batch"
-  priority:
-    tier_1_name: "Direct methodology for active pipeline"
-    tier_2_name: "Biology axis of active project"
-    tier_3_name: "Adjacent methodology"
-    tier_4_name: "Historical context"
-    tier_5_name: "Peripheral"
-
-  # Desired mix: tier_1_2_percent + tier_3_percent + tier_4_5_percent should sum to 100
-  tier_1_2_percent: 60
-  tier_3_percent: 30
-  tier_4_5_percent: 10
-
-# ============================================================================
-# Optional: Research Program Conventions
-# ============================================================================
-
-research:
-  # Reference genome used in active projects
-  reference_genome: "hg38"
-
-  # Sample type / cohort specifications
-  sample_type: "peripheral blood"
-
-  # Typical cohort sizes for statistical frameworks
-  cohort_size_description: "single cohort"
-
-  # Concurrent research tracks (for documentation)
-  active_projects:
-    - "Project A"
-    - "Project B"
-
-# ============================================================================
-# Advanced: Notes Mirroring
-# ============================================================================
-
-notes_ingest:
-  # Character encoding for reading source notes
-  encoding: utf-8
-
-  # Head truncation size (bytes) for large notes
-  head_bytes: 16384
-
-  # Tail truncation size (bytes) for large notes
-  tail_bytes: 8192
-
-  # Ignore files matching these patterns (regex)
-  ignore_patterns:
-    - "^\\."                    # Hidden files
-    - "^_"                      # Underscore-prefixed
-
-# ============================================================================
-# Advanced: Watcher / Dispatch Bridge (Cowork integration)
+# Watcher / Dispatch (advanced, for Cowork integration)
 # ============================================================================
 
 watcher:
-  # Poll interval (seconds) for dispatch inbox
+  # Poll interval (seconds) for dispatch queue
   poll_interval: 2
 
-  # Heartbeat file location (relative to wiki root)
+  # Heartbeat file (relative to repo root)
   heartbeat_file: _scripts/_queue/watcher.heartbeat
 
-  # Heartbeat timeout (seconds) — dispatch refuses if heartbeat is stale
+  # Timeout (seconds) — dispatch refusal if heartbeat older than this
   heartbeat_timeout: 15
 
-  # Directories for dispatch queue
-  queue:
-    inbox: _scripts/_queue/inbox/
-    outbox: _scripts/_queue/outbox/
-    dead: _scripts/_queue/dead/
-
-# ============================================================================
-# Logging
-# ============================================================================
-
-logging:
-  # Log level: DEBUG, INFO, WARNING, ERROR
-  level: INFO
-
-  # Log file location (optional)
-  file: _scripts/_queue/watcher.log
-
-  # Keep logs for this many days before rotating
-  retention_days: 30
+  # Dispatch queue directories (relative to repo root)
+  queue_inbox: _scripts/_queue/inbox
+  queue_outbox: _scripts/_queue/outbox
+  queue_dead: _scripts/_queue/dead

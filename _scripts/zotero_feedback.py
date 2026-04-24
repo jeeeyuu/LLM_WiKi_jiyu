@@ -8,14 +8,14 @@ For every wiki page with a `zotero_item_key` in frontmatter, pushes:
   - related: Zotero "Related Items" links to other items whose item_key
              appears as a [[wikilink]] target in this page.
 
-Configuration: Set environment variables or edit config.yaml:
-  - ZOTERO_API_BASE: Zotero local API endpoint (default: http://127.0.0.1:23119/api/users/0)
-  - WIKI_ROOT: path to wiki root (default: current directory)
+Configuration: Requires config.yaml with zotero.api_base and zotero.http_timeout.
+See config.example.yaml for reference.
 
-Usage (PowerShell/bash):
-    python _scripts/zotero_feedback.py            # incremental
-    python _scripts/zotero_feedback.py --full     # ignore last-sync marker
-    python _scripts/zotero_feedback.py --dry-run  # show what would change
+Usage (Windows PowerShell):
+    cd "path\to\repo"
+    python _scripts\zotero_feedback.py            # incremental
+    python _scripts\zotero_feedback.py --full     # ignore last-sync marker
+    python _scripts\zotero_feedback.py --dry-run  # show what would change
 
 Requires Zotero to be RUNNING (local HTTP API on port 23119).
 API is additive: existing user tags are preserved; only `wiki:*` tags are
@@ -29,19 +29,21 @@ Requirements:
 
 import argparse
 import json
-import os
 import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-WIKI_ROOT      = Path(os.getenv("WIKI_ROOT", Path.cwd()))
-WIKI_PAGES_DIR = WIKI_ROOT / "wiki"
-SOURCES_DIR    = WIKI_ROOT / "sources"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _config import CFG
+
+WIKI_DIR       = Path(__file__).resolve().parent.parent
+WIKI_PAGES_DIR = WIKI_DIR / "wiki"
+SOURCES_DIR    = WIKI_DIR / "sources"
 LAST_RUN_FILE  = Path(__file__).resolve().parent / ".last_zotero_sync"
 
-ZOTERO_API_BASE = os.getenv("ZOTERO_API_BASE", "http://127.0.0.1:23119/api/users/0")
-HTTP_TIMEOUT    = 10
+ZOTERO_API_BASE = CFG.zotero.api_base
+HTTP_TIMEOUT    = CFG.zotero.http_timeout
 
 # --- 2. Frontmatter parser (dependency-free, handles YAML subset) ---
 
@@ -166,44 +168,43 @@ def patch_item(item_key: str, new_tags: set, new_related_keys: set,
 # --- 5. Main loop -----------------------------------------------------------
 
 def main():
-    parser = argparse.ArgumentParser(description="Sync wiki pages to Zotero.")
-    parser.add_argument("--full", action="store_true", help="Ignore last-sync marker")
-    parser.add_argument("--dry-run", action="store_true", help="Show what would change")
-    args = parser.parse_args()
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--full", action="store_true",
+                    help="ignore last-sync marker")
+    ap.add_argument("--dry-run", action="store_true")
+    args = ap.parse_args()
 
-    if not WIKI_ROOT.exists():
-        print(f"ERROR: Wiki root not found: {WIKI_ROOT}", file=sys.stderr)
-        sys.exit(1)
-    if not WIKI_PAGES_DIR.exists():
-        print(f"ERROR: Wiki pages dir not found: {WIKI_PAGES_DIR}", file=sys.stderr)
-        sys.exit(1)
+    # Probe API availability
+    try:
+        import requests
+        requests.get(f"{ZOTERO_API_BASE}/items?limit=1", timeout=3)
+    except Exception:
+        sys.exit("ERROR: Zotero local API unreachable. Is Zotero running?")
 
-    mtime_floor = None if args.full else (LAST_RUN_FILE.stat().st_mtime if LAST_RUN_FILE.exists() else None)
+    mtime_floor = None
+    if not args.full and LAST_RUN_FILE.exists():
+        mtime_floor = float(LAST_RUN_FILE.read_text().strip())
+
     stem_to_key = build_stem_to_key()
-    updated = 0
-    failed = 0
+    if not stem_to_key:
+        print("No source pages with zotero_item_key found. Nothing to do.")
+        return
 
-    for p, fm, body in iter_wiki_pages(mtime_floor):
-        item_key = fm.get("zotero_item_key")
-        if not item_key:
-            continue
-
-        tags, related_keys = extract_tags_and_related(fm, body, stem_to_key)
-        item = get_item(item_key)
+    n_seen = n_patched = n_failed = 0
+    for path, fm, body in iter_wiki_pages(mtime_floor):
+        n_seen += 1
+        key = fm["zotero_item_key"]
+        tags, related = extract_tags_and_related(fm, body, stem_to_key)
+        item = get_item(key)
         if not item:
-            failed += 1
-            continue
-
-        if patch_item(item_key, tags, related_keys, item["library"]["version"], args.dry_run):
-            updated += 1
-            print(f"Updated {item_key} ({p.name})", file=sys.stderr)
-        else:
-            failed += 1
+            n_failed += 1; continue
+        ok = patch_item(key, tags, related, item["version"], args.dry_run)
+        if ok: n_patched += 1
+        else:  n_failed += 1
 
     if not args.dry_run:
-        LAST_RUN_FILE.touch()
-
-    print(f"Updated: {updated} | Failed: {failed}")
+        LAST_RUN_FILE.write_text(str(datetime.now(timezone.utc).timestamp()))
+    print(f"\nScanned: {n_seen} | Patched: {n_patched} | Failed: {n_failed}")
 
 if __name__ == "__main__":
     main()

@@ -3,24 +3,22 @@ notes_ingest.py — Obsidian external notes → notes/{slug}.md
 
 Pure local Python. Zero LLM tokens.
 
-Mirrors user-designated Obsidian folders into notes/, injecting
+Mirrors the user-designated Obsidian folders into notes/, injecting
 frontmatter so the wiki agent can treat them as first-class citations.
 Long notes (>32 KB) are head+tail truncated; the agent can read the
-original via `original_path` if needed.
+original via `original_path` if it needs more.
 
-Configuration: Set environment variables or edit config.yaml:
-  - OBSIDIAN_VAULT: path to Obsidian vault root (default: ~/Obsidian)
-  - SCAN_FOLDERS: pipe-separated list of folders to mirror (default: see code)
-  - WIKI_ROOT: path to wiki root (default: current directory)
+Configuration: Requires config.yaml with paths.obsidian_root and notes_ingest settings.
+See config.example.yaml for reference.
 
-Usage (PowerShell/bash):
-    python _scripts/notes_ingest.py
+Usage (Windows PowerShell):
+    cd "path\to\repo"
+    python _scripts\notes_ingest.py
 """
 
 # --- 1. Configuration --------------------------------------------------------
 
 import hashlib
-import os
 import re
 import sys
 from datetime import datetime, timezone
@@ -36,26 +34,18 @@ except Exception:
 
 HASH_RE = re.compile(r"^source_hash:\s*['\"]?([0-9a-f]{16})['\"]?\s*$", re.MULTILINE)
 
-OBSIDIAN_VAULT = Path(os.getenv("OBSIDIAN_VAULT", Path.home() / "Obsidian"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _config import CFG
 
-# Default scan folders — customize in config.yaml or via SCAN_FOLDERS env var
-DEFAULT_SCAN_FOLDERS = [
-    "External Notes",
-    "Lab Notes",
-    "Tool Notes",
-    "Info",
-    "Clippings",
-]
+OBSIDIAN_ROOT = Path(CFG.paths.obsidian_root)
+SCAN_FOLDERS  = list(CFG.notes_ingest.scan_folders)
 
-SCAN_FOLDERS_STR = os.getenv("SCAN_FOLDERS")
-SCAN_FOLDERS = SCAN_FOLDERS_STR.split("|") if SCAN_FOLDERS_STR else DEFAULT_SCAN_FOLDERS
+WIKI_DIR  = Path(__file__).resolve().parent.parent
+NOTES_DIR = WIKI_DIR / "notes"
 
-WIKI_ROOT = Path(os.getenv("WIKI_ROOT", Path.cwd()))
-NOTES_DIR = WIKI_ROOT / "notes"
-
-VERBATIM_THRESHOLD = 32 * 1024
-HEAD_BYTES         = 16 * 1024
-TAIL_BYTES         =  8 * 1024
+VERBATIM_THRESHOLD = CFG.notes_ingest.verbatim_threshold_kb * 1024
+HEAD_BYTES         = CFG.notes_ingest.head_bytes_kb * 1024
+TAIL_BYTES         = CFG.notes_ingest.tail_bytes_kb * 1024
 
 # --- 2. Slug generation ------------------------------------------------------
 
@@ -66,7 +56,7 @@ TAIL_BYTES         =  8 * 1024
 ILLEGAL = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
 def make_slug(rel_path: Path) -> str:
-    """Relative path inside OBSIDIAN_VAULT → flat kebab-style slug."""
+    """Relative path inside OBSIDIAN_ROOT → flat kebab-style slug."""
     parts = list(rel_path.with_suffix("").parts)
     raw = "__".join(parts)
     raw = ILLEGAL.sub("", raw)
@@ -108,71 +98,59 @@ def render_body(src: Path) -> tuple[str, bool]:
     raw = src.read_bytes()
     if len(raw) <= VERBATIM_THRESHOLD:
         return raw.decode("utf-8", errors="replace"), False
-    # Truncate: head + tail
     head = raw[:HEAD_BYTES].decode("utf-8", errors="replace")
     tail = raw[-TAIL_BYTES:].decode("utf-8", errors="replace")
-    body = f"{head}\n\n[... truncated {len(raw) - HEAD_BYTES - TAIL_BYTES} bytes ...]\n\n{tail}"
-    return body, True
+    sep = (
+        f"\n\n---\n"
+        f"_[TRUNCATED — original is {len(raw):,} bytes; "
+        f"see frontmatter `original_path` for full text]_\n"
+        f"---\n\n"
+    )
+    return head + sep + tail, True
 
-def mirror_note(src: Path, dst: Path, scan_folder: Path):
-    """Mirror one note, injecting frontmatter."""
-    rel_path = src.relative_to(OBSIDIAN_VAULT)
-    slug = make_slug(rel_path)
+def write_mirror(src: Path, dst: Path):
     body, truncated = render_body(src)
-
-    frontmatter = f"""---
-source_type: lab_note
-original_path: "{src.resolve()}"
-original_relpath: "{rel_path}"
-original_mtime: {datetime.fromtimestamp(src.stat().st_mtime, tz=timezone.utc).isoformat()}
-last_synced: {datetime.now(timezone.utc).isoformat()}
-source_hash: "{src_hash(src)}"
-truncated: {str(truncated).lower()}
-original_size_bytes: {len(src.read_bytes())}
----
-
-"""
-    output_text = frontmatter + body
-    dst.write_text(output_text, encoding="utf-8")
+    rel = src.relative_to(OBSIDIAN_ROOT)
+    h = src_hash(src)
+    fm = (
+        "---\n"
+        "source_type: lab_note\n"
+        f"original_path: {str(src).replace(chr(92), '/')!r}\n"
+        f"original_relpath: {str(rel).replace(chr(92), '/')!r}\n"
+        f"original_mtime: {datetime.fromtimestamp(src.stat().st_mtime, timezone.utc).isoformat()}\n"
+        f"last_synced: {datetime.now(timezone.utc).isoformat()}\n"
+        f"source_hash: '{h}'\n"
+        f"truncated: {str(truncated).lower()}\n"
+        f"original_size_bytes: {src.stat().st_size}\n"
+        "---\n\n"
+    )
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    dst.write_text(fm + body, encoding="utf-8")
 
 def main():
-    if not OBSIDIAN_VAULT.exists():
-        print(f"ERROR: Obsidian vault not found: {OBSIDIAN_VAULT}", file=sys.stderr)
-        print(f"  Set OBSIDIAN_VAULT environment variable or check path.", file=sys.stderr)
-        sys.exit(1)
+    if not OBSIDIAN_ROOT.exists():
+        sys.exit(f"ERROR: {OBSIDIAN_ROOT} not found.")
+    NOTES_DIR.mkdir(exist_ok=True)
 
-    NOTES_DIR.mkdir(parents=True, exist_ok=True)
-
-    total = 0
-    synced = 0
-    skipped = 0
-
-    for scan_folder_name in SCAN_FOLDERS:
-        scan_folder = OBSIDIAN_VAULT / scan_folder_name
-        if not scan_folder.exists():
-            print(f"[warning] Scan folder not found: {scan_folder}", file=sys.stderr)
+    n_total = n_synced = n_skipped = 0
+    for folder in SCAN_FOLDERS:
+        root = OBSIDIAN_ROOT / folder
+        if not root.exists():
+            print(f"WARN: missing folder {root}", file=sys.stderr)
             continue
-
-        for src in scan_folder.rglob("*.md"):
-            if src.name.startswith("_"):
-                continue
-            total += 1
-            rel_path = src.relative_to(OBSIDIAN_VAULT)
-            slug = make_slug(rel_path)
+        for src in root.rglob("*.md"):
+            n_total += 1
+            slug = make_slug(src.relative_to(OBSIDIAN_ROOT))
             dst = NOTES_DIR / f"{slug}.md"
-
             if not needs_resync(src, dst):
-                skipped += 1
+                n_skipped += 1
                 continue
+            write_mirror(src, dst)
+            n_synced += 1
+            print(f"  + {slug}")
 
-            try:
-                mirror_note(src, dst, scan_folder)
-                synced += 1
-                print(f"Synced: {slug}", file=sys.stderr)
-            except Exception as e:
-                print(f"Error mirroring {src}: {e}", file=sys.stderr)
-
-    print(f"Total: {total} | Synced: {synced} | Skipped: {skipped}")
+    print(f"\nScanned: {n_total} | Mirrored: {n_synced} | "
+          f"Up-to-date(skip): {n_skipped}")
 
 if __name__ == "__main__":
     main()

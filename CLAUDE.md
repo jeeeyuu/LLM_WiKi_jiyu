@@ -162,7 +162,7 @@ Idempotent. Run before stage 1 so that batch_extract sees canonical filenames an
 
 ### Stage 0 — External notes mirror (no LLM tokens)
 
-Runs `_scripts/notes_ingest.py`. Walks the designated Obsidian folders (configured in `config.yaml` or environment variable) and **mirrors** each `.md` into `notes/{slug}.md` with injected frontmatter `{source_type: lab_note, original_path, original_relpath, original_mtime, last_synced, source_hash, truncated, original_size_bytes}`. Files up to 32 KB are copied verbatim; larger notes are head+tail truncated (first 16 KB + last 8 KB) with a truncation marker.
+Runs `_scripts/notes_ingest.py`. Walks the designated Obsidian folders (configured in `config.yaml`) and **mirrors** each `.md` into `notes/{slug}.md` with injected frontmatter `{source_type: lab_note, original_path, original_relpath, original_mtime, last_synced, source_hash, truncated, original_size_bytes}`. Files up to 32 KB are copied verbatim; larger notes are head+tail truncated (first 16 KB + last 8 KB) with a truncation marker.
 
 **Drift detection.** Re-mirrors when (a) the destination is absent, (b) source mtime is newer than destination mtime, **or** (c) the destination's stored `source_hash` disagrees with the current source's SHA-256(16-char). The hash check catches edits that do not advance mtime (e.g., `git restore`, archive extracts, filesystem copies). Stage 0 should run before every stage 2 invocation to guarantee mirrors reflect current originals.
 
