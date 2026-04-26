@@ -184,7 +184,7 @@ Idempotent. Run before stage 1 so that batch_extract sees canonical filenames an
 
 ### Stage 0 — External notes mirror (no LLM tokens)
 
-Runs `_scripts/notes_ingest.py`. Walks the designated Obsidian folders (`🎠 대외활동`, `🐰 아주대학교 SBAI`, `🔧 툴사용법 메모`, `정보`, `Clippings`; recursive) and **mirrors** each `.md` into `notes/{slug}.md` with injected frontmatter `{source_type: lab_note, original_path, original_relpath, original_mtime, last_synced, source_hash, truncated, original_size_bytes}`. Files up to 32 KB are copied verbatim; larger notes are head+tail truncated (first 16 KB + last 8 KB) with a truncation marker.
+Runs `_scripts/notes_ingest.py`. Walks the designated Obsidian folders (`<폴더이름 넣기>`, ...; recursive) and **mirrors** each `.md` into `notes/{slug}.md` with injected frontmatter `{source_type: lab_note, original_path, original_relpath, original_mtime, last_synced, source_hash, truncated, original_size_bytes}`. Files up to 32 KB are copied verbatim; larger notes are head+tail truncated (first 16 KB + last 8 KB) with a truncation marker.
 
 **Drift detection.** Re-mirrors when (a) the destination is absent, (b) source mtime is newer than destination mtime, **or** (c) the destination's stored `source_hash` disagrees with the current source's SHA-256(16-char). The hash check catches edits that do not advance mtime (e.g., `git restore`, archive extracts, filesystem copies). Stage 0 should run before every stage 2 invocation to guarantee mirrors reflect current originals.
 
@@ -467,8 +467,8 @@ Notes are produced by `_scripts/notes_ingest.py` (stage 0, token-free mirror) fr
 ```yaml
 ---
 source_type: lab_note
-original_path: "D:/Obsidian/jiyu's/🐰 아주대학교 SBAI/.../file.md"
-original_relpath: "🐰 아주대학교 SBAI/.../file.md"
+original_path: "<참조할 옵시디언 볼트 경로넣기>"
+original_relpath: "<참조할 볼트 내 경로 넣기>"
 original_mtime: 2026-04-15T00:00:00+00:00
 last_synced: 2026-04-21T00:00:00+00:00
 truncated: false
